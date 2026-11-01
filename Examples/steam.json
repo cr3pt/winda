@@ -35,6 +35,24 @@
     "--disable-gpu",
     "--in-process-gpu"
    ]
+  },
+  {
+   "type": "wrap",
+   "path": "Program Files (x86)/Steam/bin/cef/cef.win7x64/steamwebhelper.exe",
+   "arguments": [
+    "--single-process",
+    "--disable-gpu",
+    "--in-process-gpu"
+   ]
+  },
+  {
+   "type": "wrap",
+   "path": "Program Files (x86)/Steam/bin/cef/cef.win7/steamwebhelper.exe",
+   "arguments": [
+    "--single-process",
+    "--disable-gpu",
+    "--in-process-gpu"
+   ]
   }
  ],
  "launch": {
@@ -49,5 +67,5 @@
   ]
  },
  "rating": "bronze",
- "notes": "Steam's browser (CEF 126) paints black windows under Wine on macOS; the wrap action runs its helper in single-process software mode. Installer hash pinned at the time of writing; Valve updates the file in place."
+ "notes": "Steam's browser (CEF) paints black windows under Wine on macOS; each helper variant (win64, win7x64, win7) is wrapped to run in single-process software mode. Steam picks a variant itself, so all are covered."
 }

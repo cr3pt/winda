@@ -97,10 +97,15 @@ public struct Launcher: Sendable {
         }
         runner.extraEnvironment.merge(bottle.environment) { current, _ in current }
         // Programs may replace a wrapped file when they update; put the wrapper back before every start.
+        Self.ensureWraps(recipe, prefix: prefix)
+        return PreparedBottle(bottle: bottle, runner: runner)
+    }
+
+    /// Wrapped files that do not exist (yet) are skipped; the rest are put back in front of the program.
+    static func ensureWraps(_ recipe: Recipe, prefix: URL) {
         for case let .wrap(path, arguments) in recipe.actions {
             try? ExecutableWrapper.ensure(prefix: prefix, path: path, arguments: arguments)
         }
-        return PreparedBottle(bottle: bottle, runner: runner)
     }
 
     /// Re-points an existing bottle at the engine that provides `graphics` (for example D3DMetal instead of DXVK).
@@ -159,7 +164,16 @@ public struct Launcher: Sendable {
         var prepared = try await prepare(recipe: recipe, bottleID: bottleID, graphics: settings.graphics)
         prepared.runner.extraEnvironment.merge(settings.environment) { _, new in new }
         try Self.applyCommandKey(settings.commandIsCtrl, runner: prepared.runner)
-        return try prepared.runner.run([spec.program] + spec.arguments + settings.extraArguments + extraArguments, timeout: timeout)
+        let result = try prepared.runner.run([spec.program] + spec.arguments + settings.extraArguments + extraArguments, timeout: timeout)
+        // The program may replace a wrapped file while it runs (Steam updates itself, then restarts).
+        // Keep watching until everything in the bottle has exited so the restarted program is wrapped too.
+        if recipe.actions.contains(where: { if case .wrap = $0 { return true } else { return false } }) {
+            let deadline = Date().addingTimeInterval(timeout)
+            while Date() < deadline, !prepared.runner.waitForExit(timeout: 1) {
+                Self.ensureWraps(recipe, prefix: prepared.runner.prefix)
+            }
+        }
+        return result
     }
 
     /// Writes the Mac driver options only when they differ from what the bottle already has.
