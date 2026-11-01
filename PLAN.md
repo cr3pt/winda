@@ -58,3 +58,18 @@ Zmiany względem założeń:
 - Zrobione: manifesty silników, instalator z hashem, bottle, recepty, skróty `.app`, aplikacja SwiftUI, winetricks, import GPTK. 70 testów.
 
 Nie zrobione: przenośny build Wine (gnutls, SDL2, MoltenVK, rpath), Steam, prawdziwe gry, ikony skrótów, podpis i notaryzacja, hosting binariów silników.
+
+## Stan (2026-11-01, wieczór)
+
+Działa: Steam w bottle'u uruchamiany z aplikacji WinDA (silnik Wine 11 z CrossOver 26.3 + TLS + D3DMetal 4.0b3), logowanie i okno bez czarnego ekranu, lista gier Steam z Play i skrótami `.app`, ustawienia per program (silnik, argumenty, zmienne, Cmd jako Ctrl), Stop z łagodnym zamknięciem, wybór lokalizacji plików.
+
+Wnioski techniczne:
+- Czarne okna Steama (CEF 126 pod Wine na macOS) znikają, gdy pomocnik `steamwebhelper` działa w trybie single-process bez GPU. Robi to akcja `wrap` na wszystkich trzech wariantach (`cef.win64`, `cef.win7x64`, `cef.win7`); Steam wybiera wariant sam i nadpisuje pliki przy aktualizacji, więc wrapper jest odnawiany podczas pracy.
+- Instalatora Steama nie wolno uruchamiać ponownie (cofa klienta i wymusza pełne pobranie): `skipIfExists`. Procesów Steama nie wolno zabijać w trakcie aktualizacji: Stop najpierw wysyła `-shutdown`.
+- Wine zbudowany ze źródeł wymaga: FreeType x86_64, nagłówków gnutls + gotowych bibliotek x86_64 (z Gcenx), rpath `@loader_path/../../` w modułach (`Scripts/fix-wine-rpaths.sh`) i wyłączenia libinotify.
+
+Otwarte:
+- Cities: Skylines II czeka na dokończenie etapu staging w Steamie; nie sprawdzono, czy gra się uruchamia na D3DMetal.
+- Wolne pobieranie wielu strumieni naraz w WinHTTP (oba silniki): przyczyna nieznana.
+- Binaria silników nie mają hostingu; Wine zbudowany lokalnie ma ścieżki bezwzględne do FreeType w rpath.
+- Brak ikon skrótów, podpisu i notaryzacji; okna ustawień, listy gier i Stop nie były oglądane w działającej aplikacji.
