@@ -164,16 +164,22 @@ public struct Launcher: Sendable {
         var prepared = try await prepare(recipe: recipe, bottleID: bottleID, graphics: settings.graphics)
         prepared.runner.extraEnvironment.merge(settings.environment) { _, new in new }
         try Self.applyCommandKey(settings.commandIsCtrl, runner: prepared.runner)
-        let result = try prepared.runner.run([spec.program] + spec.arguments + settings.extraArguments + extraArguments, timeout: timeout)
-        // The program may replace a wrapped file while it runs (Steam updates itself, then restarts).
-        // Keep watching until everything in the bottle has exited so the restarted program is wrapped too.
-        if recipe.actions.contains(where: { if case .wrap = $0 { return true } else { return false } }) {
-            let deadline = Date().addingTimeInterval(timeout)
-            while Date() < deadline, !prepared.runner.waitForExit(timeout: 1) {
-                Self.ensureWraps(recipe, prefix: prepared.runner.prefix)
+        // The program may replace a wrapped file while it runs (Steam updates itself, then restarts). `run`
+        // blocks for as long as the program lives, so the watcher has to run beside it, not after it.
+        let watcher = Self.watchWraps(recipe, prefix: prepared.runner.prefix)
+        defer { watcher?.cancel() }
+        return try prepared.runner.run([spec.program] + spec.arguments + settings.extraArguments + extraArguments, timeout: timeout)
+    }
+
+    /// Re-applies a recipe's wrappers about once a second until cancelled. nil when the recipe wraps nothing.
+    static func watchWraps(_ recipe: Recipe, prefix: URL, interval: Duration = .seconds(1)) -> Task<Void, Never>? {
+        guard recipe.actions.contains(where: { if case .wrap = $0 { return true } else { return false } }) else { return nil }
+        return Task.detached {
+            while !Task.isCancelled {
+                ensureWraps(recipe, prefix: prefix)
+                try? await Task.sleep(for: interval)
             }
         }
-        return result
     }
 
     /// Writes the Mac driver options only when they differ from what the bottle already has.

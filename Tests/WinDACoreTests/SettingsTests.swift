@@ -155,3 +155,38 @@ final class SwitchGraphicsTests: XCTestCase {
         XCTAssertNoThrow(try launcher.switchGraphics(recipe: recipe, to: .d3dmetal))
     }
 }
+
+final class WrapWatcherTests: XCTestCase {
+    func testWatcherRestoresAWrapperThatTheProgramOverwrote() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let prefix = tmp.appendingPathComponent("prefix")
+        let dir = prefix.appendingPathComponent("drive_c/App")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dir.appendingPathComponent("helper.exe")
+        try Data("ORIGINAL".utf8).write(to: target)
+        let recipe = try Recipe.decode(from: Data("""
+        {"schemaVersion":1,"id":"r","name":"R","category":"app","match":{"exeNames":["a.exe"],"sha256":[]},
+         "engine":{"graphics":"dxvk"},"actions":[{"type":"wrap","path":"App/helper.exe","arguments":["--a"]}],"rating":"gold"}
+        """.utf8))
+        let wrapperSize = try XCTUnwrap(try FileManager.default.attributesOfItem(atPath: try XCTUnwrap(ExecutableWrapper.wrapperBinary).path)[.size] as? Int)
+
+        let watcher = try XCTUnwrap(Launcher.watchWraps(recipe, prefix: prefix, interval: .milliseconds(30)))
+        defer { watcher.cancel() }
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: target.path)[.size] as? Int, wrapperSize)
+
+        try Data("UPDATED-BY-THE-PROGRAM".utf8).write(to: target)          // the program replaces its own helper
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: target.path)[.size] as? Int, wrapperSize, "wrapper is back")
+        let real = dir.appendingPathComponent("helper_real.exe")
+        XCTAssertEqual(try String(contentsOf: real, encoding: .utf8), "UPDATED-BY-THE-PROGRAM", "the new original is kept")
+    }
+
+    func testNoWatcherWhenNothingIsWrapped() throws {
+        let recipe = try Recipe.decode(from: Data("""
+        {"schemaVersion":1,"id":"r","name":"R","category":"app","match":{"exeNames":["a.exe"],"sha256":[]},
+         "engine":{"graphics":"dxvk"},"actions":[],"rating":"gold"}
+        """.utf8))
+        XCTAssertNil(Launcher.watchWraps(recipe, prefix: URL(fileURLWithPath: "/nonexistent")))
+    }
+}
