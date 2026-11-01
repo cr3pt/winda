@@ -33,7 +33,8 @@ do {
         print("recipe \(recipe.id): bottle ready in \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
         exit(0)
     }
-    let r = mode == "open" ? try await launcher.open(recipe: recipe) : try await launcher.launch(recipe: recipe, program: program)
+    let settings = opts["config"].map { ProgramSettingsStore(root: URL(fileURLWithPath: $0)).load(recipe.id) } ?? ProgramSettings()
+    let r = mode == "open" ? try await launcher.open(recipe: recipe, settings: settings) : try await launcher.launch(recipe: recipe, program: program)
     print("recipe \(recipe.id): status=\(r.status) in \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
     print(r.output.trimmingCharacters(in: .whitespacesAndNewlines))
     exit(r.status)

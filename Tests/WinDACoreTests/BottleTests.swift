@@ -128,6 +128,14 @@ final class RecipeApplierTests: XCTestCase {
         catch { XCTAssertEqual(error as? ApplyError, .destinationEscapes("../../escape.dll")) }
     }
 
+    func testDigestIgnoresLaunchAndNotes() throws {
+        var a = recipe([.setEnv(key: "A", value: "1")])
+        let before = try RecipeApplier.digest(of: a)
+        a.launch = LaunchSpec(program: "C:\\x.exe", arguments: ["-a"])
+        a.notes = "changed"
+        XCTAssertEqual(try RecipeApplier.digest(of: a), before)
+    }
+
     func testDigestChangesWithRecipe() throws {
         let a = recipe([.setEnv(key: "A", value: "1")])
         var b = a

@@ -33,6 +33,8 @@ public enum Action: Equatable, Sendable {
     case download(url: URL, sha256: String, destination: String)
     /// Runs a program the same recipe downloaded earlier (so it is hash-pinned), e.g. a silent installer.
     case run(path: String, arguments: [String])
+    /// Starts `path` through a small wrapper that appends `arguments` every time (see ExecutableWrapper).
+    case wrap(path: String, arguments: [String])
 }
 
 extension Action: Codable {
@@ -56,6 +58,9 @@ extension Action: Codable {
             self = .download(url: try c.decode(URL.self, forKey: .url),
                              sha256: try c.decode(String.self, forKey: .sha256),
                              destination: try c.decode(String.self, forKey: .destination))
+        case "wrap":
+            self = .wrap(path: try c.decode(String.self, forKey: .path),
+                         arguments: try c.decodeIfPresent([String].self, forKey: .arguments) ?? [])
         case "run":
             self = .run(path: try c.decode(String.self, forKey: .path),
                         arguments: try c.decodeIfPresent([String].self, forKey: .arguments) ?? [])
@@ -87,6 +92,10 @@ extension Action: Codable {
             try c.encode(destination, forKey: .destination)
         case let .run(path, arguments):
             try c.encode("run", forKey: .type)
+            try c.encode(path, forKey: .path)
+            try c.encode(arguments, forKey: .arguments)
+        case let .wrap(path, arguments):
+            try c.encode("wrap", forKey: .type)
             try c.encode(path, forKey: .path)
             try c.encode(arguments, forKey: .arguments)
         }

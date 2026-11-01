@@ -52,6 +52,12 @@ public enum RecipeValidator {
                     fail("download destination '\(destination)' must be relative and stay inside the bottle")
                 }
                 downloaded.insert(destination)
+            case let .wrap(path, arguments):
+                if path.hasPrefix("/") || path.split(separator: "/").contains("..") || !path.lowercased().hasSuffix(".exe") {
+                    fail("wrap path '\(path)' must be a relative .exe path inside the bottle")
+                }
+                if arguments.count > 8 { fail("wrap takes at most 8 arguments") }
+                for a in arguments where !matches(a, #"^--?[A-Za-z0-9-]+(=[A-Za-z0-9._,:-]+)?$"#) { fail("wrap argument '\(a)' is invalid") }
             case let .run(path, arguments):
                 if !downloaded.contains(path) { fail("run '\(path)' must be a file this recipe downloaded earlier") }
                 if arguments.count > 8 { fail("run takes at most 8 arguments") }

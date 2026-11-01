@@ -19,6 +19,9 @@ final class AppModel {
     var showSetup = false
     var pendingInstall: Recipe?
     var busyPrograms: Set<String> = []
+    var runningPrograms: Set<String> = []
+    /// The program whose settings sheet is open.
+    var editingSettings: Recipe?
     var manifests: [EngineManifest] = []
     var catalog = RecipeCatalog(recipes: [])
     var selected: URL?
@@ -89,11 +92,41 @@ final class AppModel {
         }
     }
 
+    func settings(for r: Recipe) -> ProgramSettings { ProgramSettingsStore(root: paths.config).load(r.id) }
+
+    func saveSettings(_ s: ProgramSettings, for r: Recipe) -> String? {
+        let issues = s.validate()
+        if !issues.isEmpty { return issues.joined(separator: "\n") }
+        do { try ProgramSettingsStore(root: paths.config).save(s, for: r.id) } catch { return "Could not save: \(error)" }
+        return nil
+    }
+
+    /// Graphics paths with an installed engine, for the settings picker.
+    var availableGraphics: [GraphicsEngine] {
+        let installed = manifests.filter { isInstalled($0) }
+        var out: [GraphicsEngine] = []
+        let wines = installed.filter { $0.kind == .wine }
+        if wines.contains(where: { ($0.compatibleGraphics ?? $0.provides).contains(.d3dmetal) }) { out.append(.d3dmetal) }
+        if wines.contains(where: { ($0.compatibleGraphics ?? $0.provides).contains(.dxvk) }),
+           installed.contains(where: { $0.kind == .graphicsLayer }) { out.append(.dxvk) }
+        return out
+    }
+
+    func stopProgram(_ r: Recipe) {
+        let launcher = makeLauncher()
+        Task.detached { launcher.stop(recipe: r) }
+        notice = "Stopping \(r.name)…"
+    }
+
     func openProgram(_ r: Recipe) async {
         let launcher = makeLauncher()
+        let settings = settings(for: r)
         notice = "Starting \(r.name)…"
+        runningPrograms.insert(r.id)
+        defer { runningPrograms.remove(r.id) }
         do {
-            let result = try await Task.detached { try await launcher.open(recipe: r) }.value
+            if let g = settings.graphics { try launcher.switchGraphics(recipe: r, to: g) }
+            let result = try await Task.detached { try await launcher.open(recipe: r, settings: settings) }.value
             notice = result.status == 0 ? "\(r.name) closed." : "\(r.name) exited with code \(result.status)."
         } catch {
             notice = "Could not start \(r.name): \(Self.describe(error))"
@@ -246,6 +279,8 @@ final class AppModel {
     static func describe(_ error: Error) -> String {
         switch error {
         case SelectionError.noEngine(let g): return "No installed engine can run this (needs \(g)). Install one under Engines."
+        case EngineSwitchError.notAvailable(let g): return "No installed engine provides \(g)."
+        case LaunchError.invalidSettings(let issues): return "These settings are not allowed: \(issues.joined(separator: "; "))"
         case LaunchError.noLaunchSpec: return "This recipe has nothing to start."
         case LaunchError.invalidRecipe(let issues): return "The recipe is invalid: \(issues.joined(separator: "; "))"
         case ApplyError.unsupported(let what): return "This recipe needs \(what), which WinDA cannot do yet."

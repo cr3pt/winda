@@ -79,4 +79,18 @@ public struct WineRunner: Sendable {
     }
 
     public func createPrefix() throws -> WineResult { try run(["wineboot", "--init"]) }
+
+    /// Stops every process running in this bottle (`wineserver -k`).
+    public func stopAll() {
+        let server = engine.binDirectory.appendingPathComponent("wineserver")
+        guard FileManager.default.isExecutableFile(atPath: server.path) else { return }
+        let p = Process()
+        p.executableURL = server
+        p.arguments = ["-k"]
+        p.environment = environment()
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        try? p.run()
+        p.waitUntilExit()
+    }
 }

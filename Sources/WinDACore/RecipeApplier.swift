@@ -32,6 +32,9 @@ public struct RecipeApplier: Sendable {
                 guard r.status == 0 else { throw ApplyError.actionFailed("reg add \(key): \(r.output)") }
             case let .download(url, sha256, destination):
                 try await download(url: url, sha256: sha256, destination: destination)
+            case let .wrap(path, arguments):
+                do { try ExecutableWrapper.ensure(prefix: runner.prefix, path: path, arguments: arguments) }
+                catch { throw ApplyError.actionFailed("wrap \(path): \(error)") }
             case let .run(path, arguments):
                 let windows = "C:\\" + path.replacingOccurrences(of: "/", with: "\\")
                 let r = try runner.run([windows] + arguments, timeout: 900)
@@ -64,9 +67,14 @@ public struct RecipeApplier: Sendable {
         try fm.moveItem(at: tmp, to: dest)
     }
 
+    /// Covers what changes the bottle's contents. How a program is started (`launch`) and the
+    /// notes do not, so editing them must not re-run installers.
     public static func digest(of recipe: Recipe) throws -> String {
+        var r = recipe
+        r.launch = nil
+        r.notes = nil
         let e = JSONEncoder()
         e.outputFormatting = [.sortedKeys]
-        return SHA256.hash(data: try e.encode(recipe)).map { String(format: "%02x", $0) }.joined()
+        return SHA256.hash(data: try e.encode(r)).map { String(format: "%02x", $0) }.joined()
     }
 }

@@ -14,6 +14,7 @@ public struct WinDAPaths: Sendable {
     public var recipes: URL { home.appendingPathComponent("recipes") }
     public var apps: URL { appsOverride ?? home.appendingPathComponent("Apps") }
     public var logs: URL { home.appendingPathComponent("logs") }
+    public var config: URL { home.appendingPathComponent("config") }
     public var cache: URL { engines.appendingPathComponent(".cache") }
 
     public init(home: URL, bottles: URL? = nil, engines: URL? = nil, apps: URL? = nil) {

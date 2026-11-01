@@ -15,7 +15,7 @@ let package = Package(
         .executable(name: "winda-gptk", targets: ["winda-gptk"]),
     ],
     targets: [
-        .target(name: "WinDACore", resources: [.copy("Resources/dx11test.exe")]),
+        .target(name: "WinDACore", resources: [.copy("Resources/dx11test.exe"), .copy("Resources/helper-wrapper.exe")]),
         .executableTarget(name: "winda-recipe", dependencies: ["WinDACore"]),
         .executableTarget(name: "winda-spike", dependencies: ["WinDACore"]),
         .executableTarget(name: "winda-engine", dependencies: ["WinDACore"]),

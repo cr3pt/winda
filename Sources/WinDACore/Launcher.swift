@@ -4,12 +4,17 @@ public enum LaunchError: Error, Equatable {
     case invalidRecipe([String])
     case engineNotInstalled(String)
     case noLaunchSpec(String)
+    case invalidSettings([String])
 }
 
 /// A bottle with its recipe applied, ready to run programs.
 public struct PreparedBottle: Sendable {
     public var bottle: Bottle
     public var runner: WineRunner
+}
+
+public enum EngineSwitchError: Error, Equatable {
+    case notAvailable(String)
 }
 
 /// Ties everything together: pick engines for a recipe, make or reuse the
@@ -73,6 +78,7 @@ public struct Launcher: Sendable {
             bottle = Bottle(id: id, wineEngineID: choice.wine.id, layerID: choice.layer?.id,
                             graphics: choice.graphics, environment: [:], appliedRecipeDigest: nil, createdAt: Date())
         }
+        if choice.graphics == .d3dmetal { overrides += ";d3d9,d3d10core,d3d11,d3d12,d3d12core,dxgi=b" }
         runner.extraEnvironment = ["WINEDLLOVERRIDES": overrides]
 
         let digest = try RecipeApplier.digest(of: recipe)
@@ -88,7 +94,41 @@ public struct Launcher: Sendable {
             try bottles.save(bottle)
         }
         runner.extraEnvironment.merge(bottle.environment) { current, _ in current }
+        // Programs may replace a wrapped file when they update; put the wrapper back before every start.
+        for case let .wrap(path, arguments) in recipe.actions {
+            try? ExecutableWrapper.ensure(prefix: prefix, path: path, arguments: arguments)
+        }
         return PreparedBottle(bottle: bottle, runner: runner)
+    }
+
+    /// Re-points an existing bottle at the engine that provides `graphics` (for example D3DMetal instead of DXVK).
+    /// The prefix and everything installed in it stay; only the Wine build and graphics layer change.
+    public func switchGraphics(recipe: Recipe, to graphics: GraphicsEngine, bottleID: String? = nil) throws {
+        let id = bottleID ?? recipe.id
+        guard var bottle = try bottles.load(id) else { return }
+        let avail = installed()
+        let choice: EngineChoice
+        do {
+            choice = try EngineSelector.select(graphics, wines: avail.filter { $0.kind == .wine },
+                                               layers: avail.filter { $0.kind == .graphicsLayer })
+        } catch { throw EngineSwitchError.notAvailable(graphics.rawValue) }
+        if let layer = choice.layer {
+            _ = try LayerInstaller.install(layer, packageRoot: engineRoot, prefix: try bottles.prefix(for: id))
+        }
+        bottle.wineEngineID = choice.wine.id
+        bottle.layerID = choice.layer?.id
+        bottle.graphics = choice.graphics
+        try bottles.save(bottle)
+    }
+
+    /// Stops everything running in the recipe's bottle.
+    public func stop(recipe: Recipe, bottleID: String? = nil) {
+        let id = bottleID ?? recipe.id
+        guard let bottle = try? bottles.load(id),
+              let manifest = manifests.first(where: { $0.id == bottle.wineEngineID }),
+              let wine = try? manifest.resolveWine(root: engineRoot),
+              let prefix = try? bottles.prefix(for: id) else { return }
+        WineRunner(engine: wine, prefix: prefix).stopAll()
     }
 
     /// Runs a dropped program in the recipe's bottle.
@@ -99,8 +139,27 @@ public struct Launcher: Sendable {
 
     /// Starts what the recipe says to start (for launchers such as Steam).
     @discardableResult
-    public func open(recipe: Recipe, bottleID: String? = nil, timeout: TimeInterval = 86_400) async throws -> WineResult {
+    public func open(recipe: Recipe, settings: ProgramSettings = ProgramSettings(), bottleID: String? = nil,
+                     timeout: TimeInterval = 86_400) async throws -> WineResult {
         guard let spec = recipe.launch else { throw LaunchError.noLaunchSpec(recipe.id) }
-        return try await prepare(recipe: recipe, bottleID: bottleID).runner.run([spec.program] + spec.arguments, timeout: timeout)
+        let issues = settings.validate()
+        guard issues.isEmpty else { throw LaunchError.invalidSettings(issues) }
+        var prepared = try await prepare(recipe: recipe, bottleID: bottleID)
+        prepared.runner.extraEnvironment.merge(settings.environment) { _, new in new }
+        try Self.applyCommandKey(settings.commandIsCtrl, runner: prepared.runner)
+        return try prepared.runner.run([spec.program] + spec.arguments + settings.extraArguments, timeout: timeout)
+    }
+
+    /// Writes the Mac driver options only when they differ from what the bottle already has.
+    static func applyCommandKey(_ enabled: Bool, runner: WineRunner) throws {
+        let reg = runner.prefix.appendingPathComponent("user.reg")
+        let text = (try? String(contentsOf: reg, encoding: .utf8)) ?? ""
+        let has = text.contains("\"LeftCommandIsCtrl\"=\"y\"")
+        guard enabled != has else { return }
+        for key in ["LeftCommandIsCtrl", "RightCommandIsCtrl"] {
+            let args = enabled ? ["reg", "add", "HKCU\\Software\\Wine\\Mac Driver", "/v", key, "/d", "y", "/f"]
+                               : ["reg", "delete", "HKCU\\Software\\Wine\\Mac Driver", "/v", key, "/f"]
+            _ = try runner.run(args, timeout: 60)
+        }
     }
 }

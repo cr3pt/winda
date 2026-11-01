@@ -35,6 +35,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.showSetup) { SetupView(model: model) }
         .sheet(item: $model.pendingInstall) { r in installSheet(r) }
+        .sheet(item: $model.editingSettings) { r in ProgramSettingsView(model: model, recipe: r) }
         .sheet(item: $model.pendingLicense) { m in licenseSheet(m) }
         .sheet(item: $model.pendingGPTK) { p in gptkSheet(p) }
     }
@@ -54,7 +55,13 @@ struct ContentView: View {
                             ProgressView().controlSize(.small)
                             Text("Working…").font(.caption).foregroundStyle(.secondary)
                         } else if model.isPrepared(r) {
-                            Button("Open") { Task { await model.openProgram(r) } }.buttonStyle(.borderedProminent)
+                            Button { model.editingSettings = r } label: { Image(systemName: "slider.horizontal.3") }
+                                .help("Settings for \(r.name)").buttonStyle(.borderless)
+                            if model.runningPrograms.contains(r.id) {
+                                Button("Stop") { model.stopProgram(r) }
+                            } else {
+                                Button("Open") { Task { await model.openProgram(r) } }.buttonStyle(.borderedProminent)
+                            }
                         } else {
                             Button("Install…") { model.pendingInstall = r }
                         }
