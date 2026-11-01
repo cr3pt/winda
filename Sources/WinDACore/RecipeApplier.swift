@@ -35,7 +35,10 @@ public struct RecipeApplier: Sendable {
             case let .wrap(path, arguments):
                 do { try ExecutableWrapper.ensure(prefix: runner.prefix, path: path, arguments: arguments) }
                 catch { throw ApplyError.actionFailed("wrap \(path): \(error)") }
-            case let .run(path, arguments):
+            case let .run(path, arguments, skipIfExists):
+                // An installer that already did its job must not run again: reinstalling can roll the program back.
+                if let skip = skipIfExists,
+                   FileManager.default.fileExists(atPath: runner.prefix.appendingPathComponent("drive_c").appendingPathComponent(skip).path) { continue }
                 let windows = "C:\\" + path.replacingOccurrences(of: "/", with: "\\")
                 let r = try runner.run([windows] + arguments, timeout: 900)
                 guard r.status == 0 else { throw ApplyError.actionFailed("\(path) exited with \(r.status): \(String(r.output.suffix(500)))") }

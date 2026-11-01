@@ -5,8 +5,8 @@ import WinDACore
 func die(_ m: String, _ code: Int32 = 2) -> Never { FileHandle.standardError.write(Data((m + "\n").utf8)); exit(code) }
 
 var a = Array(CommandLine.arguments.dropFirst())
-guard let mode = a.first, mode == "launch" || mode == "open" || mode == "prepare" else {
-    die("usage: winda-bottle launch|open|prepare --recipe R --manifests D --engine-root D --bottles D [--cache D] [-- program [args]]")
+guard let mode = a.first, mode == "launch" || mode == "open" || mode == "prepare" || mode == "stop" else {
+    die("usage: winda-bottle launch|open|prepare|stop --recipe R --manifests D --engine-root D --bottles D [--cache D] [-- program [args]]")
 }
 a.removeFirst()
 var opts: [String: String] = [:]
@@ -28,13 +28,18 @@ do {
                             bottles: BottleStore(root: URL(fileURLWithPath: bd)),
                             cache: opts["cache"].map { URL(fileURLWithPath: $0) })
     let t0 = Date()
+    if mode == "stop" {
+        launcher.stop(recipe: recipe)
+        print("recipe \(recipe.id): stopped")
+        exit(0)
+    }
     if mode == "prepare" {
         _ = try await launcher.prepare(recipe: recipe)
         print("recipe \(recipe.id): bottle ready in \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
         exit(0)
     }
     let settings = opts["config"].map { ProgramSettingsStore(root: URL(fileURLWithPath: $0)).load(recipe.id) } ?? ProgramSettings()
-    let r = mode == "open" ? try await launcher.open(recipe: recipe, settings: settings) : try await launcher.launch(recipe: recipe, program: program)
+    let r = mode == "open" ? try await launcher.open(recipe: recipe, settings: settings, extraArguments: program) : try await launcher.launch(recipe: recipe, program: program)
     print("recipe \(recipe.id): status=\(r.status) in \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
     print(r.output.trimmingCharacters(in: .whitespacesAndNewlines))
     exit(r.status)

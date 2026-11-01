@@ -24,7 +24,8 @@
    "path": "steam-install/SteamSetup.exe",
    "arguments": [
     "/S"
-   ]
+   ],
+   "skipIfExists": "Program Files (x86)/Steam/steam.exe"
   },
   {
    "type": "wrap",
@@ -42,6 +43,9 @@
    "-noverifyfiles",
    "-norepairfiles",
    "-no-cef-sandbox"
+  ],
+  "shutdown": [
+   "-shutdown"
   ]
  },
  "rating": "bronze",

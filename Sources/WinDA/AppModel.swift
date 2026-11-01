@@ -20,6 +20,8 @@ final class AppModel {
     var pendingInstall: Recipe?
     var busyPrograms: Set<String> = []
     var runningPrograms: Set<String> = []
+    /// Games found in each launcher's library, by recipe id.
+    var games: [String: [SteamGame]] = [:]
     /// The program whose settings sheet is open.
     var editingSettings: Recipe?
     var manifests: [EngineManifest] = []
@@ -118,15 +120,57 @@ final class AppModel {
         notice = "Stopping \(r.name)…"
     }
 
-    func openProgram(_ r: Recipe) async {
+    /// Folder that holds a launcher's `steamapps`, derived from its launch path inside the bottle.
+    func libraryRoot(for r: Recipe) -> URL? {
+        guard let program = r.launch?.program,
+              let prefix = try? BottleStore(root: paths.bottles).prefix(for: r.id) else { return nil }
+        return SteamLibrary.unixURL(forWindowsPath: program, prefix: prefix)?.deletingLastPathComponent()
+    }
+
+    func refreshGames() {
+        for r in programs where r.id == "steam" || r.launch?.program.lowercased().hasSuffix("steam.exe") == true {
+            guard let root = libraryRoot(for: r) else { continue }
+            let found = SteamLibrary.games(inSteamRoot: root)
+            if games[r.id] != found { games[r.id] = found }
+        }
+    }
+
+    func playGame(_ r: Recipe, _ game: SteamGame) async {
+        await openProgram(r, extra: ["-applaunch", game.appID], label: game.name)
+    }
+
+    func createGameShortcut(_ r: Recipe, _ game: SteamGame) {
+        guard let exe = Bundle.main.executableURL else { return }
+        let launcher = exe.deletingLastPathComponent().appendingPathComponent("winda-bottle")
+        guard FileManager.default.isExecutableFile(atPath: launcher.path) else {
+            notice = "Shortcuts need the WinDA launcher next to the app, and it was not found."
+            return
+        }
+        do {
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("winda-\(UUID().uuidString).json")
+            try JSONEncoder().encode(r).write(to: tmp)
+            defer { try? FileManager.default.removeItem(at: tmp) }
+            try FileManager.default.createDirectory(at: paths.apps, withIntermediateDirectories: true)
+            var spec = ShortcutSpec(name: game.name, recipe: tmp, program: ["-applaunch", game.appID], launcher: launcher,
+                                    manifestsDirectory: paths.manifests, engineRoot: paths.engines, bottlesRoot: paths.bottles,
+                                    logDirectory: paths.logs, cacheDirectory: paths.cache)
+            spec.openWithConfig = paths.config
+            let app = try ShortcutGenerator.create(spec, in: paths.apps)
+            notice = "Created \(app.lastPathComponent) in \(paths.apps.path)"
+            NSWorkspace.shared.activateFileViewerSelecting([app])
+        } catch {
+            notice = "Could not create the shortcut: \(Self.describe(error))"
+        }
+    }
+
+    func openProgram(_ r: Recipe, extra: [String] = [], label: String? = nil) async {
         let launcher = makeLauncher()
         let settings = settings(for: r)
-        notice = "Starting \(r.name)…"
+        notice = "Starting \(label ?? r.name)…"
         runningPrograms.insert(r.id)
         defer { runningPrograms.remove(r.id) }
         do {
-            if let g = settings.graphics { try launcher.switchGraphics(recipe: r, to: g) }
-            let result = try await Task.detached { try await launcher.open(recipe: r, settings: settings) }.value
+            let result = try await Task.detached { try await launcher.open(recipe: r, settings: settings, extraArguments: extra) }.value
             notice = result.status == 0 ? "\(r.name) closed." : "\(r.name) exited with code \(result.status)."
         } catch {
             notice = "Could not start \(r.name): \(Self.describe(error))"

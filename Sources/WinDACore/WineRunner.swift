@@ -80,6 +80,24 @@ public struct WineRunner: Sendable {
 
     public func createPrefix() throws -> WineResult { try run(["wineboot", "--init"]) }
 
+    /// Waits until every process in this bottle has exited (`wineserver -w`), or the time runs out.
+    @discardableResult
+    public func waitForExit(timeout: TimeInterval) -> Bool {
+        let server = engine.binDirectory.appendingPathComponent("wineserver")
+        guard FileManager.default.isExecutableFile(atPath: server.path) else { return true }
+        let p = Process()
+        p.executableURL = server
+        p.arguments = ["-w"]
+        p.environment = environment()
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return true }
+        let deadline = Date().addingTimeInterval(timeout)
+        while p.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.2) }
+        if p.isRunning { p.terminate(); return false }
+        return true
+    }
+
     /// Stops every process running in this bottle (`wineserver -k`).
     public func stopAll() {
         let server = engine.binDirectory.appendingPathComponent("wineserver")

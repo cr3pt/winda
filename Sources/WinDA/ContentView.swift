@@ -66,11 +66,48 @@ struct ContentView: View {
                             Button("Install…") { model.pendingInstall = r }
                         }
                     }
+                    gamesList(r)
                 }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 12).fill(.quaternary.opacity(0.4)))
+            .task {
+                while !Task.isCancelled {
+                    model.refreshGames()
+                    try? await Task.sleep(for: .seconds(4))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func gamesList(_ r: Recipe) -> some View {
+        let list = model.games[r.id] ?? []
+        if model.isPrepared(r), !list.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Games").font(.subheadline.bold()).padding(.top, 4)
+                ForEach(list) { g in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(g.name)
+                            if let p = g.progress {
+                                ProgressView(value: p).frame(width: 180)
+                                Text(String(format: "Installing %.1f%%", p * 100)).font(.caption).foregroundStyle(.secondary)
+                            } else if g.isInstalled {
+                                Text(ByteCountFormatter.string(fromByteCount: g.sizeOnDisk, countStyle: .file))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Text("Waiting for Steam to finish").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button { model.createGameShortcut(r, g) } label: { Image(systemName: "square.and.arrow.down") }
+                            .help("Create a shortcut app for \(g.name)").buttonStyle(.borderless).disabled(!g.isInstalled)
+                        Button("Play") { Task { await model.playGame(r, g) } }
+                            .buttonStyle(.borderedProminent).disabled(!g.isInstalled)
+                    }
+                }
+            }
         }
     }
 

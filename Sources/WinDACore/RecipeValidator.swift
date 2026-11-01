@@ -58,7 +58,10 @@ public enum RecipeValidator {
                 }
                 if arguments.count > 8 { fail("wrap takes at most 8 arguments") }
                 for a in arguments where !matches(a, #"^--?[A-Za-z0-9-]+(=[A-Za-z0-9._,:-]+)?$"#) { fail("wrap argument '\(a)' is invalid") }
-            case let .run(path, arguments):
+            case let .run(path, arguments, skipIfExists):
+                if let skip = skipIfExists, skip.hasPrefix("/") || skip.split(separator: "/").contains("..") {
+                    fail("run skipIfExists '\(skip)' must be relative and stay inside the bottle")
+                }
                 if !downloaded.contains(path) { fail("run '\(path)' must be a file this recipe downloaded earlier") }
                 if arguments.count > 8 { fail("run takes at most 8 arguments") }
                 for a in arguments where !matches(a, #"^[A-Za-z0-9/_.:=-]+$"#) { fail("run argument '\(a)' is invalid") }
@@ -68,6 +71,7 @@ public enum RecipeValidator {
             if !matches(launch.program, #"^[A-Za-z]:\\[^\n]+$"#) || launch.program.contains("..") {
                 fail("launch program '\(launch.program)' must be an absolute Windows path")
             }
+            for a in launch.shutdown ?? [] where !matches(a, #"^[A-Za-z0-9/_.:=-]+$"#) { fail("shutdown argument '\(a)' is invalid") }
             if launch.arguments.count > 16 { fail("launch takes at most 16 arguments") }
             for a in launch.arguments where !matches(a, #"^[A-Za-z0-9/_.:=-]+$"#) { fail("launch argument '\(a)' is invalid") }
         }

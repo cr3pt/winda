@@ -169,3 +169,59 @@ final class LauncherTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: tmp.appendingPathComponent("b").path))
     }
 }
+
+final class RunActionTests: XCTestCase {
+    private func recipe(_ actions: [Action]) -> Recipe {
+        Recipe(schemaVersion: 1, id: "r", name: "R", category: .app, match: Match(exeNames: ["a.exe"], sha256: []),
+               engine: EngineSpec(graphics: .dxvk, package: nil), actions: actions, rating: .gold, notes: nil)
+    }
+
+    private func tempDir() throws -> URL {
+        let d = FileManager.default.temporaryDirectory.appendingPathComponent("winda-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    func testRunIsSkippedWhenTheMarkerFileExists() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let prefix = tmp.appendingPathComponent("prefix")
+        let marker = prefix.appendingPathComponent("drive_c/App/app.exe")
+        try FileManager.default.createDirectory(at: marker.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: marker)
+        // The Wine path does not exist: if the installer were started, apply would throw.
+        let applier = RecipeApplier(runner: WineRunner(engine: WineEngine(wine: URL(fileURLWithPath: "/nonexistent/wine")), prefix: prefix))
+        let env = try await applier.apply(recipe([.run(path: "dl/setup.exe", arguments: ["/S"], skipIfExists: "App/app.exe")]))
+        XCTAssertTrue(env.isEmpty)
+    }
+
+    func testRunStillStartsWhenTheMarkerIsMissing() async throws {
+        let tmp = try tempDir(); defer { try? FileManager.default.removeItem(at: tmp) }
+        let applier = RecipeApplier(runner: WineRunner(engine: WineEngine(wine: URL(fileURLWithPath: "/nonexistent/wine")),
+                                                        prefix: tmp.appendingPathComponent("prefix")))
+        do {
+            _ = try await applier.apply(recipe([.run(path: "dl/setup.exe", arguments: [], skipIfExists: "App/app.exe")]))
+            XCTFail("expected the installer to be attempted")
+        } catch { /* attempted, and failed only because there is no Wine here */ }
+    }
+
+    func testValidationOfSkipAndShutdown() throws {
+        let json = """
+        {"schemaVersion":1,"id":"r","name":"R","category":"app","match":{"exeNames":["a.exe"],"sha256":[]},
+         "engine":{"graphics":"dxvk"},"actions":[
+          {"type":"download","url":"https://example.com/a.exe","sha256":"\(String(repeating: "a", count: 64))","destination":"dl/a.exe"},
+          {"type":"run","path":"dl/a.exe","arguments":["/S"],"skipIfExists":"%@"}],
+         "launch":{"program":"C:\\\\App\\\\app.exe","arguments":[],"shutdown":["%@"]},"rating":"gold"}
+        """
+        func issues(_ skip: String, _ shutdown: String) throws -> Int {
+            RecipeValidator.validate(try Recipe.decode(from: Data(String(format: json, skip, shutdown).utf8))).count
+        }
+        XCTAssertEqual(try issues("App/app.exe", "-shutdown"), 0)
+        XCTAssertEqual(try issues("../x", "-shutdown"), 1)
+        XCTAssertEqual(try issues("App/app.exe", "a; b"), 1)
+    }
+
+    func testSkipIfExistsRoundTrips() throws {
+        let r = recipe([.run(path: "dl/a.exe", arguments: ["/S"], skipIfExists: "App/app.exe")])
+        XCTAssertEqual(try Recipe.decode(from: JSONEncoder().encode(r)), r)
+    }
+}

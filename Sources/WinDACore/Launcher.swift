@@ -47,12 +47,14 @@ public struct Launcher: Sendable {
 
     /// Creates the bottle if needed and applies the recipe. `bottleID` defaults to the
     /// recipe id, so each recipe gets its own bottle.
-    public func prepare(recipe: Recipe, bottleID: String? = nil) async throws -> PreparedBottle {
+    public func prepare(recipe: Recipe, bottleID: String? = nil, graphics: GraphicsEngine? = nil) async throws -> PreparedBottle {
         let issues = RecipeValidator.validate(recipe)
         guard issues.isEmpty else { throw LaunchError.invalidRecipe(issues.map(\.message)) }
 
         let avail = installed()
-        let choice = try EngineSelector.select(recipe.engine.graphics,
+        // An existing bottle keeps the graphics path it was set up with, unless the caller asks for another.
+        let existingGraphics = try bottles.load(bottleID ?? recipe.id).map(\.graphics)
+        let choice = try EngineSelector.select(graphics ?? existingGraphics ?? recipe.engine.graphics,
                                                wines: avail.filter { $0.kind == .wine },
                                                layers: avail.filter { $0.kind == .graphicsLayer })
         let id = bottleID ?? recipe.id
@@ -121,14 +123,21 @@ public struct Launcher: Sendable {
         try bottles.save(bottle)
     }
 
-    /// Stops everything running in the recipe's bottle.
-    public func stop(recipe: Recipe, bottleID: String? = nil) {
+    /// Stops the recipe's bottle. A program that can quit cleanly (recipe `launch.shutdown`) is asked to first and
+    /// given time to finish; only what is left after that is killed. Killing Steam mid-update makes it download
+    /// its whole client again on the next start.
+    public func stop(recipe: Recipe, bottleID: String? = nil, gracePeriod: TimeInterval = 45) {
         let id = bottleID ?? recipe.id
         guard let bottle = try? bottles.load(id),
               let manifest = manifests.first(where: { $0.id == bottle.wineEngineID }),
               let wine = try? manifest.resolveWine(root: engineRoot),
               let prefix = try? bottles.prefix(for: id) else { return }
-        WineRunner(engine: wine, prefix: prefix).stopAll()
+        let runner = WineRunner(engine: wine, prefix: prefix)
+        if let spec = recipe.launch, let shutdown = spec.shutdown, !shutdown.isEmpty {
+            _ = try? runner.run([spec.program] + shutdown, timeout: 20)
+            runner.waitForExit(timeout: gracePeriod)
+        }
+        runner.stopAll()
     }
 
     /// Runs a dropped program in the recipe's bottle.
@@ -139,15 +148,18 @@ public struct Launcher: Sendable {
 
     /// Starts what the recipe says to start (for launchers such as Steam).
     @discardableResult
-    public func open(recipe: Recipe, settings: ProgramSettings = ProgramSettings(), bottleID: String? = nil,
-                     timeout: TimeInterval = 86_400) async throws -> WineResult {
+    public func open(recipe: Recipe, settings: ProgramSettings = ProgramSettings(), extraArguments: [String] = [],
+                     bottleID: String? = nil, timeout: TimeInterval = 86_400) async throws -> WineResult {
         guard let spec = recipe.launch else { throw LaunchError.noLaunchSpec(recipe.id) }
-        let issues = settings.validate()
+        let issues = settings.validate() + ProgramSettings(extraArguments: extraArguments).validate()
         guard issues.isEmpty else { throw LaunchError.invalidSettings(issues) }
-        var prepared = try await prepare(recipe: recipe, bottleID: bottleID)
+        if let g = settings.graphics, let b = try bottles.load(bottleID ?? recipe.id), b.graphics != g {
+            try switchGraphics(recipe: recipe, to: g, bottleID: bottleID)
+        }
+        var prepared = try await prepare(recipe: recipe, bottleID: bottleID, graphics: settings.graphics)
         prepared.runner.extraEnvironment.merge(settings.environment) { _, new in new }
         try Self.applyCommandKey(settings.commandIsCtrl, runner: prepared.runner)
-        return try prepared.runner.run([spec.program] + spec.arguments + settings.extraArguments, timeout: timeout)
+        return try prepared.runner.run([spec.program] + spec.arguments + settings.extraArguments + extraArguments, timeout: timeout)
     }
 
     /// Writes the Mac driver options only when they differ from what the bottle already has.
