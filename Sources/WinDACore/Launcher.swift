@@ -63,7 +63,7 @@ public struct Launcher: Sendable {
         var runner = WineRunner(engine: wine, prefix: prefix)
 
         var bottle: Bottle
-        var overrides = "mscoree,mshtml="
+        var overrides = wine.baseDllOverrides
         if let existing = try bottles.load(id) {
             guard existing.wineEngineID == choice.wine.id else {
                 throw BottleError.engineMismatch(bottle: existing.wineEngineID, requested: choice.wine.id)

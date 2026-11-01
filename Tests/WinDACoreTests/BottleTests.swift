@@ -225,3 +225,31 @@ final class RunActionTests: XCTestCase {
         XCTAssertEqual(try Recipe.decode(from: JSONEncoder().encode(r)), r)
     }
 }
+
+final class MonoTests: XCTestCase {
+    private func engine(in root: URL, mono: String?) throws -> WineEngine {
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("bin"), withIntermediateDirectories: true)
+        if let mono { try FileManager.default.createDirectory(at: root.appendingPathComponent("share/wine/mono/\(mono)"), withIntermediateDirectories: true) }
+        return WineEngine(wine: root.appendingPathComponent("bin/wine"))
+    }
+
+    func testMonoIsEnabledOnlyWhenShippedWithTheEngine() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("winda-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let without = try engine(in: tmp.appendingPathComponent("a"), mono: nil)
+        XCTAssertFalse(without.monoAvailable)
+        XCTAssertEqual(without.baseDllOverrides, "mscoree,mshtml=")
+        let unrelated = try engine(in: tmp.appendingPathComponent("b"), mono: "something-else")
+        XCTAssertFalse(unrelated.monoAvailable)
+        let with = try engine(in: tmp.appendingPathComponent("c"), mono: "wine-mono-10.4.1")
+        XCTAssertTrue(with.monoAvailable)
+        XCTAssertEqual(with.baseDllOverrides, "mshtml=")
+    }
+
+    func testRunnerEnvironmentFollowsTheEngine() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("winda-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let with = try engine(in: tmp.appendingPathComponent("c"), mono: "wine-mono-10.4.1")
+        XCTAssertEqual(WineRunner(engine: with, prefix: tmp).environment()["WINEDLLOVERRIDES"], "mshtml=")
+    }
+}

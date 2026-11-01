@@ -6,6 +6,18 @@ public struct WineEngine: Sendable {
     public var binDirectory: URL { wine.deletingLastPathComponent() }
 
     public init(wine: URL) { self.wine = wine }
+
+    /// True when a Wine Mono runtime ships with this Wine build (`share/wine/mono/wine-mono-*`).
+    /// Programs with managed (.NET) code, including many installers, need it.
+    public var monoAvailable: Bool {
+        let mono = wine.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("share/wine/mono")
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: mono.path)) ?? []
+        return names.contains { $0.hasPrefix("wine-mono-") }
+    }
+
+    /// Load-order overrides every Wine process starts with. Wine's own Mono and Gecko download prompts are
+    /// switched off; Mono is only left enabled when it is already on disk, so nothing has to be fetched.
+    public var baseDllOverrides: String { monoAvailable ? "mshtml=" : "mscoree,mshtml=" }
 }
 
 public struct WineResult: Sendable {
@@ -35,7 +47,7 @@ public struct WineRunner: Sendable {
             "WINEPREFIX": prefix.path,
             "WINEDEBUG": "-all",
             // Skip Mono/Gecko download prompts during prefix creation.
-            "WINEDLLOVERRIDES": "mscoree,mshtml=",
+            "WINEDLLOVERRIDES": engine.baseDllOverrides,
         ]
         // CrossOver-based Wine builds load D3DMetal's helper from here; builds that do not know the variable ignore it.
         let shared = engine.wine.deletingLastPathComponent().deletingLastPathComponent()
