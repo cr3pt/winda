@@ -3,6 +3,13 @@ import Foundation
 public enum LaunchError: Error, Equatable {
     case invalidRecipe([String])
     case engineNotInstalled(String)
+    case noLaunchSpec(String)
+}
+
+/// A bottle with its recipe applied, ready to run programs.
+public struct PreparedBottle: Sendable {
+    public var bottle: Bottle
+    public var runner: WineRunner
 }
 
 /// Ties everything together: pick engines for a recipe, make or reuse the
@@ -26,9 +33,16 @@ public struct Launcher: Sendable {
         return manifests.filter { installer.isInstalled($0) }
     }
 
-    /// `bottleID` defaults to the recipe id, so each recipe gets its own bottle.
-    @discardableResult
-    public func launch(recipe: Recipe, program: [String], bottleID: String? = nil) async throws -> WineResult {
+    /// True once the bottle for `recipe` exists with this exact recipe applied.
+    public func isPrepared(_ recipe: Recipe, bottleID: String? = nil) -> Bool {
+        guard let b = try? bottles.load(bottleID ?? recipe.id),
+              let digest = try? RecipeApplier.digest(of: recipe) else { return false }
+        return b.appliedRecipeDigest == digest
+    }
+
+    /// Creates the bottle if needed and applies the recipe. `bottleID` defaults to the
+    /// recipe id, so each recipe gets its own bottle.
+    public func prepare(recipe: Recipe, bottleID: String? = nil) async throws -> PreparedBottle {
         let issues = RecipeValidator.validate(recipe)
         guard issues.isEmpty else { throw LaunchError.invalidRecipe(issues.map(\.message)) }
 
@@ -73,8 +87,20 @@ public struct Launcher: Sendable {
             bottle.appliedRecipeDigest = digest
             try bottles.save(bottle)
         }
-
         runner.extraEnvironment.merge(bottle.environment) { current, _ in current }
-        return try runner.run(program)
+        return PreparedBottle(bottle: bottle, runner: runner)
+    }
+
+    /// Runs a dropped program in the recipe's bottle.
+    @discardableResult
+    public func launch(recipe: Recipe, program: [String], bottleID: String? = nil) async throws -> WineResult {
+        try await prepare(recipe: recipe, bottleID: bottleID).runner.run(program)
+    }
+
+    /// Starts what the recipe says to start (for launchers such as Steam).
+    @discardableResult
+    public func open(recipe: Recipe, bottleID: String? = nil, timeout: TimeInterval = 86_400) async throws -> WineResult {
+        guard let spec = recipe.launch else { throw LaunchError.noLaunchSpec(recipe.id) }
+        return try await prepare(recipe: recipe, bottleID: bottleID).runner.run([spec.program] + spec.arguments, timeout: timeout)
     }
 }

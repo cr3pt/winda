@@ -31,11 +31,13 @@ public enum Action: Equatable, Sendable {
     case winetricks(verb: String)
     case registry(key: String, name: String, value: String)
     case download(url: URL, sha256: String, destination: String)
+    /// Runs a program the same recipe downloaded earlier (so it is hash-pinned), e.g. a silent installer.
+    case run(path: String, arguments: [String])
 }
 
 extension Action: Codable {
     private enum CodingKeys: String, CodingKey {
-        case type, key, value, verb, name, url, sha256, destination
+        case type, key, value, verb, name, url, sha256, destination, path, arguments
     }
 
     public init(from decoder: Decoder) throws {
@@ -54,6 +56,9 @@ extension Action: Codable {
             self = .download(url: try c.decode(URL.self, forKey: .url),
                              sha256: try c.decode(String.self, forKey: .sha256),
                              destination: try c.decode(String.self, forKey: .destination))
+        case "run":
+            self = .run(path: try c.decode(String.self, forKey: .path),
+                        arguments: try c.decodeIfPresent([String].self, forKey: .arguments) ?? [])
         case let other:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: c, debugDescription: "Unknown action type '\(other)'")
@@ -80,7 +85,23 @@ extension Action: Codable {
             try c.encode(url, forKey: .url)
             try c.encode(sha256, forKey: .sha256)
             try c.encode(destination, forKey: .destination)
+        case let .run(path, arguments):
+            try c.encode("run", forKey: .type)
+            try c.encode(path, forKey: .path)
+            try c.encode(arguments, forKey: .arguments)
         }
+    }
+}
+
+/// How to start an installed program (a launcher such as Steam), as opposed to a dropped `.exe`.
+public struct LaunchSpec: Codable, Equatable, Sendable {
+    /// Windows path, e.g. `C:\Program Files (x86)\Steam\steam.exe`.
+    public var program: String
+    public var arguments: [String]
+
+    public init(program: String, arguments: [String] = []) {
+        self.program = program
+        self.arguments = arguments
     }
 }
 
@@ -94,6 +115,7 @@ public struct Recipe: Codable, Equatable, Sendable {
     public var actions: [Action]
     public var rating: Rating
     public var notes: String?
+    public var launch: LaunchSpec?
 
     public static let currentSchemaVersion = 1
 

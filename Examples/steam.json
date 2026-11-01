@@ -1,0 +1,10 @@
+{"schemaVersion":1,"id":"steam","name":"Steam","category":"app",
+ "match":{"exeNames":["SteamSetup.exe"],"sha256":[]},
+ "engine":{"graphics":"dxvk"},
+ "actions":[
+  {"type":"download","url":"https://cdn.fastly.steamstatic.com/client/installer/SteamSetup.exe","sha256":"7d3654531c32d941b8cae81c4137fc542172bfa9635f169cb392f245a0a12bcb","destination":"steam-install/SteamSetup.exe"},
+  {"type":"run","path":"steam-install/SteamSetup.exe","arguments":["/S"]}
+ ],
+ "launch":{"program":"C:\\Program Files (x86)\\Steam\\steam.exe","arguments":["-cef-disable-gpu","-no-cef-sandbox"]},
+ "rating":"bronze",
+ "notes":"Installer hash pinned at the time of writing; Valve updates the file in place, so the hash may need refreshing."}

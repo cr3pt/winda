@@ -29,6 +29,7 @@ public enum RecipeValidator {
             fail("anti-cheat incompatible recipes must not carry actions")
         }
 
+        var downloaded: Set<String> = []
         for action in recipe.actions {
             switch action {
             case let .setEnv(key, value):
@@ -50,7 +51,19 @@ public enum RecipeValidator {
                 if destination.hasPrefix("/") || destination.split(separator: "/").contains("..") {
                     fail("download destination '\(destination)' must be relative and stay inside the bottle")
                 }
+                downloaded.insert(destination)
+            case let .run(path, arguments):
+                if !downloaded.contains(path) { fail("run '\(path)' must be a file this recipe downloaded earlier") }
+                if arguments.count > 8 { fail("run takes at most 8 arguments") }
+                for a in arguments where !matches(a, #"^[A-Za-z0-9/_.:=-]+$"#) { fail("run argument '\(a)' is invalid") }
             }
+        }
+        if let launch = recipe.launch {
+            if !matches(launch.program, #"^[A-Za-z]:\\[^\n]+$"#) || launch.program.contains("..") {
+                fail("launch program '\(launch.program)' must be an absolute Windows path")
+            }
+            if launch.arguments.count > 16 { fail("launch takes at most 16 arguments") }
+            for a in launch.arguments where !matches(a, #"^[A-Za-z0-9/_.:=-]+$"#) { fail("launch argument '\(a)' is invalid") }
         }
         return issues
     }

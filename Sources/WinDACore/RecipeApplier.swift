@@ -32,6 +32,10 @@ public struct RecipeApplier: Sendable {
                 guard r.status == 0 else { throw ApplyError.actionFailed("reg add \(key): \(r.output)") }
             case let .download(url, sha256, destination):
                 try await download(url: url, sha256: sha256, destination: destination)
+            case let .run(path, arguments):
+                let windows = "C:\\" + path.replacingOccurrences(of: "/", with: "\\")
+                let r = try runner.run([windows] + arguments, timeout: 900)
+                guard r.status == 0 else { throw ApplyError.actionFailed("\(path) exited with \(r.status): \(String(r.output.suffix(500)))") }
             case let .winetricks(verb):
                 guard let winetricks else { throw ApplyError.unsupported("winetricks \(verb) (winetricks is not installed)") }
                 do { try winetricks.run(verb: verb) }

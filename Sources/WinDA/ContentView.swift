@@ -11,6 +11,12 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            HStack {
+                Spacer()
+                Button { model.showSetup = true } label: { Label("Locations", systemImage: "gearshape") }
+                    .buttonStyle(.borderless)
+            }
+            programsSection
             dropZone
             if model.selected != nil { programCard }
             if let n = model.notice {
@@ -27,8 +33,64 @@ struct ContentView: View {
         .fileImporter(isPresented: $importingGPTK, allowedContentTypes: [UTType(filenameExtension: "dmg") ?? .data]) { r in
             if case .success(let url) = r { Task { await model.inspectGPTK(url) } }
         }
+        .sheet(isPresented: $model.showSetup) { SetupView(model: model) }
+        .sheet(item: $model.pendingInstall) { r in installSheet(r) }
         .sheet(item: $model.pendingLicense) { m in licenseSheet(m) }
         .sheet(item: $model.pendingGPTK) { p in gptkSheet(p) }
+    }
+
+    @ViewBuilder private var programsSection: some View {
+        if !model.programs.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Programs").font(.headline)
+                ForEach(model.programs, id: \.id) { r in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(r.name).font(.body.bold())
+                            Text(model.isPrepared(r) ? "Installed" : "Not installed").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if model.busyPrograms.contains(r.id) {
+                            ProgressView().controlSize(.small)
+                            Text("Working…").font(.caption).foregroundStyle(.secondary)
+                        } else if model.isPrepared(r) {
+                            Button("Open") { Task { await model.openProgram(r) } }.buttonStyle(.borderedProminent)
+                        } else {
+                            Button("Install…") { model.pendingInstall = r }
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12).fill(.quaternary.opacity(0.4)))
+        }
+    }
+
+    private func installSheet(_ r: Recipe) -> some View {
+        let dir = model.installLocation(r)
+        let check = LocationCheck.preview(dir)
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("Install \(r.name)").font(.title3.bold())
+            Text("WinDA will download it and install it in a private Windows environment here:")
+            Text(dir.path).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+            if let free = check.freeBytes {
+                Label(ByteCountFormatter.string(fromByteCount: free, countStyle: .file) + " free on this volume",
+                      systemImage: check.lowSpace ? "exclamationmark.triangle" : "internaldrive")
+                    .foregroundStyle(check.lowSpace ? Color.orange : Color.secondary)
+            }
+            Text("You sign in to \(r.name) yourself the first time you open it. WinDA never sees your password.")
+                .font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Button("Change location…") { model.pendingInstall = nil; model.showSetup = true }
+                Spacer()
+                Button("Cancel") { model.pendingInstall = nil }
+                Button("Install") {
+                    model.pendingInstall = nil
+                    Task { await model.installProgram(r) }
+                }.buttonStyle(.borderedProminent)
+            }
+        }.padding(20).frame(width: 520)
     }
 
     private var dropZone: some View {
@@ -187,3 +249,5 @@ struct ContentView: View {
 }
 
 extension EngineManifest: Identifiable {}
+
+extension Recipe: Identifiable {}

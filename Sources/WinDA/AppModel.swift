@@ -12,7 +12,13 @@ final class AppModel {
         case failed(String)
     }
 
-    let paths: WinDAPaths
+    var paths: WinDAPaths
+    private let locationStore = LocationStore()
+    /// True until the user has chosen where WinDA keeps its files (skipped when WINDA_HOME is set).
+    var needsSetup: Bool
+    var showSetup = false
+    var pendingInstall: Recipe?
+    var busyPrograms: Set<String> = []
     var manifests: [EngineManifest] = []
     var catalog = RecipeCatalog(recipes: [])
     var selected: URL?
@@ -32,9 +38,66 @@ final class AppModel {
         var info: GPTKInfo
     }
 
-    init(paths: WinDAPaths = .resolve()) {
-        self.paths = paths
+    init(paths: WinDAPaths? = nil) {
+        let saved = LocationStore().load()
+        self.paths = paths ?? .resolve(saved: saved)
+        let envSet = !(ProcessInfo.processInfo.environment["WINDA_HOME"] ?? "").isEmpty
+        needsSetup = paths == nil && saved == nil && !envSet
+        showSetup = needsSetup
         reload()
+    }
+
+    var currentLocations: WinDALocations {
+        WinDALocations(home: paths.home.path, bottles: paths.bottlesOverride?.path,
+                       engines: paths.enginesOverride?.path, apps: paths.appsOverride?.path)
+    }
+
+    /// Saves the chosen folders after checking each can be written to.
+    func saveLocations(_ l: WinDALocations) -> String? {
+        for (label, url) in [("WinDA data", l.paths.home), ("Windows apps", l.paths.bottles),
+                             ("Engines and downloads", l.paths.engines), ("Shortcuts", l.paths.apps)] {
+            if !LocationCheck.check(url).writable { return "\(label): cannot write to \(url.path)" }
+        }
+        do { try locationStore.save(l) } catch { return "Could not save the settings: \(error)" }
+        paths = l.paths
+        needsSetup = false
+        showSetup = false
+        reload()
+        return nil
+    }
+
+    private func makeLauncher() -> Launcher {
+        Launcher(manifests: manifests, engineRoot: paths.engines, bottles: BottleStore(root: paths.bottles), cache: paths.cache)
+    }
+
+    /// Recipes that install a launcher or program with its own entry point (Steam and similar).
+    var programs: [Recipe] { catalog.recipes.filter { $0.launch != nil } }
+
+    func isPrepared(_ r: Recipe) -> Bool { makeLauncher().isPrepared(r) }
+
+    func installLocation(_ r: Recipe) -> URL { paths.bottles.appendingPathComponent(r.id) }
+
+    func installProgram(_ r: Recipe) async {
+        busyPrograms.insert(r.id)
+        defer { busyPrograms.remove(r.id) }
+        let launcher = makeLauncher()
+        do {
+            _ = try await Task.detached { try await launcher.prepare(recipe: r) }.value
+            notice = "\(r.name) is installed. Press Open to start it."
+        } catch {
+            notice = "Could not install \(r.name): \(Self.describe(error))"
+        }
+    }
+
+    func openProgram(_ r: Recipe) async {
+        let launcher = makeLauncher()
+        notice = "Starting \(r.name)…"
+        do {
+            let result = try await Task.detached { try await launcher.open(recipe: r) }.value
+            notice = result.status == 0 ? "\(r.name) closed." : "\(r.name) exited with code \(result.status)."
+        } catch {
+            notice = "Could not start \(r.name): \(Self.describe(error))"
+        }
     }
 
     /// The recipe that will run: the matched one, or defaults for an unknown program.
@@ -71,7 +134,7 @@ final class AppModel {
         guard let recipe, let selected else { return }
         status = .running
         output = ""
-        let launcher = Launcher(manifests: manifests, engineRoot: paths.engines, bottles: BottleStore(root: paths.bottles), cache: paths.cache)
+        let launcher = makeLauncher()
         do {
             let r = try await launcher.launch(recipe: recipe, program: [selected.path])
             output = r.output
@@ -183,6 +246,7 @@ final class AppModel {
     static func describe(_ error: Error) -> String {
         switch error {
         case SelectionError.noEngine(let g): return "No installed engine can run this (needs \(g)). Install one under Engines."
+        case LaunchError.noLaunchSpec: return "This recipe has nothing to start."
         case LaunchError.invalidRecipe(let issues): return "The recipe is invalid: \(issues.joined(separator: "; "))"
         case ApplyError.unsupported(let what): return "This recipe needs \(what), which WinDA cannot do yet."
         case BottleError.engineMismatch: return "This program's bottle was made with a different engine."

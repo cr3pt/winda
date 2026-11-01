@@ -5,7 +5,9 @@ import WinDACore
 func die(_ m: String, _ code: Int32 = 2) -> Never { FileHandle.standardError.write(Data((m + "\n").utf8)); exit(code) }
 
 var a = Array(CommandLine.arguments.dropFirst())
-guard a.first == "launch" else { die("usage: winda-bottle launch --recipe R --manifests D --engine-root D --bottles D -- program [args]") }
+guard let mode = a.first, mode == "launch" || mode == "open" || mode == "prepare" else {
+    die("usage: winda-bottle launch|open|prepare --recipe R --manifests D --engine-root D --bottles D [--cache D] [-- program [args]]")
+}
 a.removeFirst()
 var opts: [String: String] = [:]
 var program: [String] = []
@@ -15,7 +17,7 @@ while let x = it.next() {
     guard x.hasPrefix("--"), let v = it.next() else { die("bad argument: \(x)") }
     opts[String(x.dropFirst(2))] = v
 }
-guard let rp = opts["recipe"], let md = opts["manifests"], let er = opts["engine-root"], let bd = opts["bottles"], !program.isEmpty else {
+guard let rp = opts["recipe"], let md = opts["manifests"], let er = opts["engine-root"], let bd = opts["bottles"], (mode != "launch" || !program.isEmpty) else {
     die("missing arguments")
 }
 do {
@@ -26,7 +28,12 @@ do {
                             bottles: BottleStore(root: URL(fileURLWithPath: bd)),
                             cache: opts["cache"].map { URL(fileURLWithPath: $0) })
     let t0 = Date()
-    let r = try await launcher.launch(recipe: recipe, program: program)
+    if mode == "prepare" {
+        _ = try await launcher.prepare(recipe: recipe)
+        print("recipe \(recipe.id): bottle ready in \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
+        exit(0)
+    }
+    let r = mode == "open" ? try await launcher.open(recipe: recipe) : try await launcher.launch(recipe: recipe, program: program)
     print("recipe \(recipe.id): status=\(r.status) in \(String(format: "%.1f", Date().timeIntervalSince(t0)))s")
     print(r.output.trimmingCharacters(in: .whitespacesAndNewlines))
     exit(r.status)
