@@ -1,0 +1,5 @@
+{"schemaVersion":1,"id":"Bad Game","name":"Bad","category":"game",
+ "match":{"exeNames":["bad.exe"],"sha256":[]},
+ "engine":{"graphics":"dxvk"},
+ "actions":[{"type":"download","url":"http://x.test/a.dll","sha256":"abc","destination":"../x"}],
+ "rating":"gold"}

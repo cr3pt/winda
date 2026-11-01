@@ -1,0 +1,193 @@
+import AppKit
+import Foundation
+import Observation
+import WinDACore
+
+@MainActor
+@Observable
+final class AppModel {
+    enum Status: Equatable {
+        case idle, running
+        case finished(Int32)
+        case failed(String)
+    }
+
+    let paths: WinDAPaths
+    var manifests: [EngineManifest] = []
+    var catalog = RecipeCatalog(recipes: [])
+    var selected: URL?
+    var matchedRecipe: Recipe?
+    var status: Status = .idle
+    var output = ""
+    var notice: String?
+    var installing: Set<String> = []
+    var pendingLicense: EngineManifest?
+    /// A GPTK image waiting for the user to read and accept Apple's license.
+    var pendingGPTK: PendingGPTK?
+    var importing = false
+
+    struct PendingGPTK: Identifiable {
+        var id: String { url.path }
+        var url: URL
+        var info: GPTKInfo
+    }
+
+    init(paths: WinDAPaths = .resolve()) {
+        self.paths = paths
+        reload()
+    }
+
+    /// The recipe that will run: the matched one, or defaults for an unknown program.
+    var recipe: Recipe? {
+        guard let selected else { return nil }
+        return matchedRecipe ?? RecipeCatalog.untested(for: selected)
+    }
+
+    var isTested: Bool { matchedRecipe != nil }
+
+    func reload() {
+        let dir = paths.manifests
+        let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".json") }.sorted()
+        manifests = files.compactMap { try? EngineManifest.decode(from: Data(contentsOf: dir.appendingPathComponent($0))) }
+            .filter { EngineManifestValidator.validate($0).isEmpty }
+        catalog = RecipeCatalog(directory: paths.recipes)
+    }
+
+    func isInstalled(_ m: EngineManifest) -> Bool { EngineInstaller(root: paths.engines).isInstalled(m) }
+
+    func select(_ url: URL) {
+        guard url.pathExtension.lowercased() == "exe" else {
+            notice = "Choose a Windows program (.exe)."
+            return
+        }
+        selected = url
+        matchedRecipe = catalog.match(exe: url)
+        status = .idle
+        output = ""
+        notice = nil
+    }
+
+    func run() async {
+        guard let recipe, let selected else { return }
+        status = .running
+        output = ""
+        let launcher = Launcher(manifests: manifests, engineRoot: paths.engines, bottles: BottleStore(root: paths.bottles), cache: paths.cache)
+        do {
+            let r = try await launcher.launch(recipe: recipe, program: [selected.path])
+            output = r.output
+            status = .finished(r.status)
+            log(r.output)
+        } catch {
+            status = .failed(Self.describe(error))
+        }
+    }
+
+    func createShortcut() {
+        guard let recipe, let selected else { return }
+        guard let exe = Bundle.main.executableURL else { return }
+        let launcher = exe.deletingLastPathComponent().appendingPathComponent("winda-bottle")
+        guard FileManager.default.isExecutableFile(atPath: launcher.path) else {
+            notice = "Shortcuts need the WinDA launcher next to the app, and it was not found."
+            return
+        }
+        do {
+            // Writing the recipe to a temp file lets the generator copy it into the bundle.
+            let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("winda-\(UUID().uuidString).json")
+            try JSONEncoder().encode(recipe).write(to: tmp)
+            defer { try? FileManager.default.removeItem(at: tmp) }
+            try FileManager.default.createDirectory(at: paths.apps, withIntermediateDirectories: true)
+            let name = isTested ? recipe.name : selected.deletingPathExtension().lastPathComponent
+            let spec = ShortcutSpec(name: name, recipe: tmp, program: [selected.path], launcher: launcher,
+                                    manifestsDirectory: paths.manifests, engineRoot: paths.engines,
+                                    bottlesRoot: paths.bottles, logDirectory: paths.logs, cacheDirectory: paths.cache)
+            let app = try ShortcutGenerator.create(spec, in: paths.apps)
+            notice = "Created \(app.lastPathComponent)"
+            NSWorkspace.shared.activateFileViewerSelecting([app])
+        } catch {
+            notice = "Could not create the shortcut: \(Self.describe(error))"
+        }
+    }
+
+    func install(_ m: EngineManifest, licenseAccepted: Bool) async {
+        installing.insert(m.id)
+        defer { installing.remove(m.id) }
+        do {
+            try await EngineInstaller(root: paths.engines).install(m, licenseAccepted: licenseAccepted)
+            notice = "Installed \(m.name)"
+        } catch InstallError.licenseNotAccepted {
+            pendingLicense = m
+        } catch {
+            notice = "Install failed: \(Self.describe(error))"
+        }
+    }
+
+    /// Step 1: read the image and show the license. Nothing is installed yet.
+    func inspectGPTK(_ url: URL) async {
+        importing = true
+        defer { importing = false }
+        let importer = GPTKImporter(engineRoot: paths.engines)
+        do {
+            let info = try await Task.detached { try importer.inspect(image: url) }.value
+            pendingGPTK = PendingGPTK(url: url, info: info)
+        } catch {
+            notice = "Could not read that image: \(Self.describeImport(error))"
+        }
+    }
+
+    /// Step 2 (after acceptance): import, then try the new D3DMetal on each installed GPTK-based Wine.
+    func importGPTK(_ pending: PendingGPTK) async {
+        importing = true
+        defer { importing = false }
+        let engines = paths.engines, manifestsDir = paths.manifests
+        let bases = manifests.filter { $0.kind == .wine && $0.provides.contains(.d3dmetal) && isInstalled($0) && !$0.id.contains("-d3dm-") }
+        let url = pending.url
+        let result: Result<String, Error> = await Task.detached {
+            do {
+                let importer = GPTKImporter(engineRoot: engines)
+                let rec = try importer.install(image: url, licenseAccepted: true)
+                guard !bases.isEmpty else { return .success("Imported D3DMetal \(rec.version), but no GPTK-based Wine is installed to use it with.") }
+                var lines: [String] = []
+                for base in bases {
+                    let o = try D3DMetalOverlay.deriveAndVerify(base: base, imported: rec, engineRoot: engines, manifestsDirectory: manifestsDir)
+                    lines.append(o.activated
+                        ? "D3DMetal \(rec.version) works with \(base.name) and is now available."
+                        : "D3DMetal \(rec.version) did not pass the check with \(base.name), so it is not used. \(SmokeTest.summary(o.smoke))")
+                }
+                return .success(lines.joined(separator: "\n"))
+            } catch { return .failure(error) }
+        }.value
+        switch result {
+        case .success(let m): notice = m
+        case .failure(let e): notice = "Import failed: \(Self.describeImport(e))"
+        }
+        reload()
+    }
+
+    static func describeImport(_ error: Error) -> String {
+        switch error {
+        case ImportError.notAGPTKImage: return "this is not a Game Porting Toolkit image."
+        case ImportError.missingComponent(let c): return "the image is missing \(c)."
+        case ImportError.alreadyImported(let id): return "\(id) is already imported."
+        case ImportError.mountFailed(let m): return "the image could not be opened (\(m))."
+        case ImportError.licenseNotAccepted: return "the license was not accepted."
+        default: return "\(error)"
+        }
+    }
+
+    private func log(_ text: String) {
+        try? FileManager.default.createDirectory(at: paths.logs, withIntermediateDirectories: true)
+        let url = paths.logs.appendingPathComponent("last-run.log")
+        try? Data(text.utf8).write(to: url)
+    }
+
+    static func describe(_ error: Error) -> String {
+        switch error {
+        case SelectionError.noEngine(let g): return "No installed engine can run this (needs \(g)). Install one under Engines."
+        case LaunchError.invalidRecipe(let issues): return "The recipe is invalid: \(issues.joined(separator: "; "))"
+        case ApplyError.unsupported(let what): return "This recipe needs \(what), which WinDA cannot do yet."
+        case BottleError.engineMismatch: return "This program's bottle was made with a different engine."
+        case InstallError.hashMismatch: return "The download did not match its checksum and was discarded."
+        default: return "\(error)"
+        }
+    }
+}

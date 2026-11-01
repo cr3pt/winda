@@ -1,0 +1,6 @@
+{"schemaVersion":1,"id":"wine-gcenx-11.21","name":"Wine Devel 11.21 (Gcenx)","kind":"wine","version":"11.21",
+ "archive":{"url":"https://github.com/Gcenx/macOS_Wine_builds/releases/download/11.21/wine-devel-11.21-osx64.tar.xz",
+  "sha256":"9909b486657e10ab66c7279371ae1f990345b596b3b1b3a0cf21f28af24fa0ce","size":225612636,"extractTo":"wine-gcenx-11.21"},
+ "provides":["dxvk"],
+ "wineBinary":"wine-gcenx-11.21/Wine Devel.app/Contents/Resources/wine/bin/wine",
+ "compatibleGraphics":["dxvk"]}

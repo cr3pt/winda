@@ -1,0 +1,7 @@
+{"schemaVersion":1,"id":"gptk-wine-3.0-3","name":"Game Porting Toolkit 3.0-3 (Gcenx)","kind":"wine","version":"3.0-3",
+ "archive":{"url":"https://github.com/Gcenx/game-porting-toolkit/releases/download/Game-Porting-Toolkit-3.0-3/game-porting-toolkit-3.0-3.tar.xz",
+  "sha256":"d377683937340f914823dbb2e1252b329cbf834ff58907d0293db8cebf0e392e","size":239200808,"extractTo":"gptk-wine-3.0-3"},
+ "license":{"name":"Apple Game Porting Toolkit license (non-commercial redistribution; read the version-specific text)","requiresAcceptance":true},
+ "provides":["d3dmetal"],
+ "wineBinary":"gptk-wine-3.0-3/Game Porting Toolkit.app/Contents/Resources/wine/bin/wine64",
+ "compatibleGraphics":["d3dmetal"]}

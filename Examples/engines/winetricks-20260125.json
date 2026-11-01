@@ -1,0 +1,5 @@
+{"schemaVersion":1,"id":"winetricks-20260125","name":"Winetricks 20260125","kind":"tool","version":"20260125",
+ "archive":{"url":"https://github.com/Winetricks/winetricks/archive/refs/tags/20260125.tar.gz",
+  "sha256":"2890bd9fbbade4638e58b4999a237273192df03b58516ae7b8771e09c22d2f56","size":706134,"extractTo":"winetricks-20260125"},
+ "provides":[],
+ "toolBinary":"winetricks-20260125/winetricks-20260125/src/winetricks"}

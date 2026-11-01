@@ -1,0 +1,3 @@
+{"schemaVersion":1,"id":"dx11test-auto","name":"WinDA DX11 test (auto)","category":"app",
+ "match":{"exeNames":["dx11test.exe"],"sha256":[]},
+ "engine":{"graphics":"auto"},"actions":[],"rating":"silver"}

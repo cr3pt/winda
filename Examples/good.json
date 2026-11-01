@@ -1,0 +1,5 @@
+{"schemaVersion":1,"id":"example-game","name":"Example Game","category":"game",
+ "match":{"exeNames":["game.exe"],"sha256":[]},
+ "engine":{"graphics":"d3dmetal","package":"wine-gcenx-10.0"},
+ "actions":[{"type":"setEnv","key":"DXVK_ASYNC","value":"1"},{"type":"winetricks","verb":"vcrun2022"}],
+ "rating":"gold"}

@@ -1,0 +1,5 @@
+{"schemaVersion":1,"id":"dx11test-dxvk","name":"WinDA DX11 test (DXVK)","category":"app",
+ "match":{"exeNames":["dx11test.exe"],"sha256":[]},
+ "engine":{"graphics":"dxvk"},
+ "actions":[{"type":"setEnv","key":"DXVK_LOG_LEVEL","value":"warn"}],
+ "rating":"gold","notes":"Own test program; Wine 11.21 + DXVK-macOS 1.10.3."}

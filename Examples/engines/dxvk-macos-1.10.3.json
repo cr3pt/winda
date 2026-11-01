@@ -1,0 +1,6 @@
+{"schemaVersion":1,"id":"dxvk-macos-1.10.3","name":"DXVK-macOS 1.10.3 async (Gcenx)","kind":"graphicsLayer","version":"1.10.3",
+ "archive":{"url":"https://github.com/Gcenx/DXVK-macOS/releases/download/v1.10.3-20230507-repack/dxvk-macOS-async-v1.10.3-20230507-repack.tar.gz",
+  "sha256":"acd1520ad105d8ef124a09c8e11a259a5dc8bdc565ad18e0e52693f9807b2477","size":2793443,"extractTo":"dxvk-macos-1.10.3"},
+ "provides":["dxvk"],
+ "installs":[{"source":"dxvk-macos-1.10.3/dxvk-macOS-async-v1.10.3-20230507-repack/x64","destination":"windows/system32"}],
+ "dllOverrides":["d3d11,d3d10core=n,b"]}

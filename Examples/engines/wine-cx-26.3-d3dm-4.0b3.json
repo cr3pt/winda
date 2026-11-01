@@ -1,0 +1,21 @@
+{
+  "archive" : {
+    "extractTo" : "wine-cx-26.3-d3dm-4.0b3",
+    "sha256" : "ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872",
+    "size" : 149054023,
+    "url" : "https:\/\/media.codeweavers.com\/pub\/crossover\/source\/crossover-sources-26.3.0.tar.gz"
+  },
+  "compatibleGraphics" : [
+    "d3dmetal"
+  ],
+  "id" : "wine-cx-26.3-d3dm-4.0b3",
+  "kind" : "wine",
+  "name" : "Wine 11.0 (CrossOver 26.3 sources) + D3DMetal 4.0b3",
+  "priority" : 100,
+  "provides" : [
+    "d3dmetal"
+  ],
+  "schemaVersion" : 1,
+  "version" : "26.3.0",
+  "wineBinary" : "wine-cx-26.3-d3dm-4.0b3\/bin\/wine"
+}

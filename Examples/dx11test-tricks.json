@@ -1,0 +1,5 @@
+{"schemaVersion":1,"id":"dx11test-tricks","name":"WinDA DX11 test (winetricks)","category":"app",
+ "match":{"exeNames":["dx11test-tricks.exe"],"sha256":[]},
+ "engine":{"graphics":"dxvk"},
+ "actions":[{"type":"winetricks","verb":"fontsmooth=rgb"}],
+ "rating":"silver"}

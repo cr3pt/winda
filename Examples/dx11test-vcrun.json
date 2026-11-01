@@ -1,0 +1,5 @@
+{"schemaVersion":1,"id":"dx11test-vcrun","name":"WinDA DX11 test (vcrun2022)","category":"app",
+ "match":{"exeNames":["dx11test-vcrun.exe"],"sha256":[]},
+ "engine":{"graphics":"dxvk"},
+ "actions":[{"type":"winetricks","verb":"vcrun2022"}],
+ "rating":"silver"}
