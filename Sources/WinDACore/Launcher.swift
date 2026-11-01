@@ -98,6 +98,9 @@ public struct Launcher: Sendable {
         runner.extraEnvironment.merge(bottle.environment) { current, _ in current }
         // Programs may replace a wrapped file when they update; put the wrapper back before every start.
         Self.ensureWraps(recipe, prefix: prefix)
+        if wine.monoAvailable, !DotNetSupport.isConfigured(prefix: prefix) {
+            try DotNetSupport.configure(runner: runner)
+        }
         return PreparedBottle(bottle: bottle, runner: runner)
     }
 

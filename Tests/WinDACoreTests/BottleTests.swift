@@ -253,3 +253,18 @@ final class MonoTests: XCTestCase {
         XCTAssertEqual(WineRunner(engine: with, prefix: tmp).environment()["WINEDLLOVERRIDES"], "mshtml=")
     }
 }
+
+final class DotNetSupportTests: XCTestCase {
+    func testDetectsTheInstallRootInSystemReg() throws {
+        let prefix = FileManager.default.temporaryDirectory.appendingPathComponent("winda-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: prefix, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: prefix) }
+        XCTAssertFalse(DotNetSupport.isConfigured(prefix: prefix), "no registry file yet")
+        try Data("[Software\\\\Microsoft\\\\.NETFramework] 1\n\"InstallRoot\"=\"C:\\\\windows\\\\Microsoft.NET\\\\Framework\\\\\"\n".utf8)
+            .write(to: prefix.appendingPathComponent("system.reg"))
+        XCTAssertFalse(DotNetSupport.isConfigured(prefix: prefix), "only the 32-bit view is not enough")
+        try Data("[Software\\\\Microsoft\\\\.NETFramework] 1\n\"InstallRoot\"=\"C:\\\\windows\\\\Microsoft.NET\\\\Framework64\\\\\"\n".utf8)
+            .write(to: prefix.appendingPathComponent("system.reg"))
+        XCTAssertTrue(DotNetSupport.isConfigured(prefix: prefix))
+    }
+}
